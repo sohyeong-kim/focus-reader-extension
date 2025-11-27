@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            width: 300px;
+            padding: 16px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+        }
+        h2 {
+            margin: 0 0 12px;
+            font-size: 16px;
+            color: #58a6ff;
+        }
+        .section {
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #252540;
+            border-radius: 8px;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: #888;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #58a6ff;
+            color: #000;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-secondary {
+            background: #404060;
+            color: #e0e0e0;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #888;
+        }
+        .cache-info {
+            font-size: 12px;
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+        .button-group {
+            display: flex;
+            gap: 8px;
+        }
+        .button-group button {
+            flex: 1;
+        }
+        .hint {
+            font-size: 11px;
+            color: #666;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h2>📖 Focus Reader</h2>
+    
+    <div class="section">
+        <label>OpenAI API Key</label>
+        <input type="password" id="api-key" placeholder="sk-...">
+        <button class="btn-primary" id="save-key" style="margin-top:8px">💾 저장</button>
+    </div>
+    
+    <div class="section">
+        <label>spaCy Server</label>
+        <div class="status">
+            <div class="status-dot"></div>
+            <span id="status-text">확인 중...</span>
+        </div>
+    </div>
+    
+    <div class="section">
+        <label>오디오 캐시</label>
+        <div class="cache-info" id="cache-info">확인 중...</div>
+        <div class="button-group">
+            <button class="btn-secondary" id="clear-page-cache">🗑️ 현재 페이지</button>
+            <button class="btn-danger" id="clear-all-cache">��️ 전체 삭제</button>
+        </div>
+    </div>
+    
+    <div class="hint">
+        💡 페이지에서 Alt+R: 리딩모드<br>
+        ⬅️➡️ 문장 이동 | ⬆️⬇️ 문단 이동
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>
