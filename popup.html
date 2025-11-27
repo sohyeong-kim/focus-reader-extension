@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <style>
         body {
-            width: 300px;
+            width: 320px;
             padding: 16px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #1a1a2e;
@@ -27,7 +27,7 @@
             margin-bottom: 6px;
             color: #888;
         }
-        input {
+        input, select {
             width: 100%;
             padding: 8px;
             border: 1px solid #333;
@@ -36,6 +36,9 @@
             color: #e0e0e0;
             font-size: 12px;
             box-sizing: border-box;
+        }
+        select {
+            cursor: pointer;
         }
         button {
             padding: 8px 12px;
@@ -76,6 +79,12 @@
             border-radius: 50%;
             background: #888;
         }
+        .status-dot.online {
+            background: #22c55e;
+        }
+        .status-dot.offline {
+            background: #ef4444;
+        }
         .cache-info {
             font-size: 12px;
             margin-bottom: 10px;
@@ -93,37 +102,140 @@
             color: #666;
             margin-top: 8px;
         }
+        .tts-option {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tts-option:hover {
+            background: #333355;
+        }
+        .tts-option.selected {
+            background: #404070;
+            border: 1px solid #58a6ff;
+        }
+        .tts-option input[type="radio"] {
+            width: auto;
+            margin-right: 10px;
+        }
+        .tts-option-info {
+            flex: 1;
+        }
+        .tts-option-name {
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .tts-option-desc {
+            font-size: 11px;
+            color: #888;
+        }
+        .tts-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+        .badge-free {
+            background: #22c55e;
+            color: #000;
+        }
+        .badge-premium {
+            background: #f59e0b;
+            color: #000;
+        }
+        .service-status {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .service-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+        }
     </style>
 </head>
 <body>
     <h2>📖 Focus Reader</h2>
     
+    <!-- TTS Engine Selection -->
     <div class="section">
-        <label>OpenAI API Key</label>
-        <input type="password" id="api-key" placeholder="sk-...">
-        <button class="btn-primary" id="save-key" style="margin-top:8px">💾 저장</button>
-    </div>
-    
-    <div class="section">
-        <label>spaCy Server</label>
-        <div class="status">
-            <div class="status-dot"></div>
-            <span id="status-text">확인 중...</span>
+        <label>🎙️ TTS Engine</label>
+        
+        <div class="tts-option" data-engine="kokoro">
+            <input type="radio" name="tts-engine" value="kokoro" id="tts-kokoro">
+            <div class="tts-option-info">
+                <div class="tts-option-name">
+                    Kokoro TTS
+                    <span class="tts-badge badge-free">FREE</span>
+                </div>
+                <div class="tts-option-desc">Local AI voice (requires Docker)</div>
+            </div>
+        </div>
+        
+        <div class="tts-option" data-engine="openai">
+            <input type="radio" name="tts-engine" value="openai" id="tts-openai">
+            <div class="tts-option-info">
+                <div class="tts-option-name">
+                    OpenAI TTS
+                    <span class="tts-badge badge-premium">PREMIUM</span>
+                </div>
+                <div class="tts-option-desc">High quality (requires API key)</div>
+            </div>
+        </div>
+        
+        <div class="tts-option" data-engine="browser">
+            <input type="radio" name="tts-engine" value="browser" id="tts-browser">
+            <div class="tts-option-info">
+                <div class="tts-option-name">
+                    Browser TTS
+                    <span class="tts-badge badge-free">FREE</span>
+                </div>
+                <div class="tts-option-desc">Built-in browser voice</div>
+            </div>
         </div>
     </div>
     
+    <!-- Service Status -->
     <div class="section">
-        <label>오디오 캐시</label>
-        <div class="cache-info" id="cache-info">확인 중...</div>
+        <label>📡 Service Status</label>
+        <div class="service-status">
+            <div class="service-item">
+                <div class="status-dot" id="spacy-dot"></div>
+                <span>spaCy</span>
+            </div>
+            <div class="service-item">
+                <div class="status-dot" id="kokoro-dot"></div>
+                <span>Kokoro</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- API Key (for OpenAI) -->
+    <div class="section" id="api-key-section">
+        <label>🔑 OpenAI API Key</label>
+        <input type="password" id="api-key" placeholder="sk-...">
+        <button class="btn-primary" id="save-key" style="margin-top:8px">💾 Save</button>
+    </div>
+    
+    <!-- Cache -->
+    <div class="section">
+        <label>💾 Audio Cache</label>
+        <div class="cache-info" id="cache-info">Checking...</div>
         <div class="button-group">
-            <button class="btn-secondary" id="clear-page-cache">🗑️ 현재 페이지</button>
-            <button class="btn-danger" id="clear-all-cache">��️ 전체 삭제</button>
+            <button class="btn-secondary" id="clear-page-cache">🗑️ This Page</button>
+            <button class="btn-danger" id="clear-all-cache">🗑️ Clear All</button>
         </div>
     </div>
     
     <div class="hint">
-        💡 페이지에서 Alt+R: 리딩모드<br>
-        ⬅️➡️ 문장 이동 | ⬆️⬇️ 문단 이동
+        💡 Alt+R: Reading mode<br>
+        ⬅️➡️ Navigate sentences | ⬆️⬇️ Navigate paragraphs
     </div>
     
     <script src="popup.js"></script>

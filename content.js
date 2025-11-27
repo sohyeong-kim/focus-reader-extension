@@ -25,7 +25,7 @@
     let openaiApiKey = '';
     let allPageAudioGenerated = false;
     let isGeneratingAudio = false;
-    let selectedTTSEngine = localStorage.getItem('fr_tts_engine') || null; // 'openai' or 'kokoro'
+    let selectedTTSEngine = null; // will be loaded from chrome.storage
     
     // 페이지 키 (캐시 분리용)
     const PAGE_KEY = location.hostname + location.pathname;
@@ -454,6 +454,10 @@
     async function loadSettings() {
         return new Promise((resolve) => {
             chrome.storage.sync.get(['openai_api_key', 'tts_speed'], (result) => {
+                // Also load TTS engine from local storage
+                chrome.storage.local.get(['ttsEngine'], (localResult) => {
+                    if (localResult.ttsEngine) selectedTTSEngine = localResult.ttsEngine;
+                });
                 if (result.openai_api_key) openaiApiKey = result.openai_api_key;
                 if (result.tts_speed) ttsSpeed = result.tts_speed;
                 resolve();
@@ -836,7 +840,7 @@
             const choice = await showTTSSelectModal();
             if (!choice) return;
             selectedTTSEngine = choice;
-            localStorage.setItem('fr_tts_engine', choice);
+            chrome.storage.local.set({ ttsEngine: choice });
         }
         
         // OpenAI 선택했는데 API 키 없으면
@@ -1163,6 +1167,11 @@
 
     // ========== 메시지 핸들러 (팝업에서 캐시 삭제 요청) ==========
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.type === 'TTS_ENGINE_CHANGED') {
+            selectedTTSEngine = request.engine;
+            console.log('TTS Engine changed to:', selectedTTSEngine);
+            return;
+        }
         if (request.action === 'getPageKey') {
             sendResponse({ pageKey: PAGE_KEY });
         } else if (request.action === 'clearPageCache') {

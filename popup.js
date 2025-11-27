@@ -1,148 +1,151 @@
-document.addEventListener('DOMContentLoaded', async () => {
-    const apiKeyInput = document.getElementById('api-key');
-    const saveBtn = document.getElementById('save-key');
-    const statusDot = document.querySelector('.status-dot');
-    const statusText = document.getElementById('status-text');
-    const cacheInfo = document.getElementById('cache-info');
-    const clearPageCacheBtn = document.getElementById('clear-page-cache');
-    const clearAllCacheBtn = document.getElementById('clear-all-cache');
+// TTS Engine Selection
+const ttsOptions = document.querySelectorAll('.tts-option');
+const ttsRadios = document.querySelectorAll('input[name="tts-engine"]');
 
-    // Load saved API key
-    chrome.storage.sync.get(['openai_api_key'], (result) => {
-        if (result.openai_api_key) {
-            apiKeyInput.value = result.openai_api_key;
-        }
-    });
+// Load saved TTS engine
+chrome.storage.local.get(['ttsEngine'], (result) => {
+    const engine = result.ttsEngine || 'kokoro';
+    document.getElementById(`tts-${engine}`).checked = true;
+    updateTTSOptionStyles();
+});
 
-    // Save API key
-    saveBtn.addEventListener('click', () => {
-        const key = apiKeyInput.value.trim();
-        if (key) {
-            chrome.storage.sync.set({ openai_api_key: key }, () => {
-                saveBtn.textContent = '✅ 저장됨';
-                setTimeout(() => saveBtn.textContent = '💾 저장', 1500);
-            });
-        }
-    });
-
-    // Check server
-    async function checkServer() {
-        try {
-            const response = await fetch('http://localhost:8000/health', { 
-                signal: AbortSignal.timeout(2000) 
-            });
-            if (response.ok) {
-                statusDot.style.background = '#10b981';
-                statusText.textContent = '연결됨 (localhost:8000)';
-            } else throw new Error();
-        } catch {
-            statusDot.style.background = '#ef4444';
-            statusText.textContent = '연결 안됨 - docker-compose up -d';
-        }
-    }
-
-    // Get current tab's page key
-    async function getCurrentTab() {
-        return new Promise((resolve) => {
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                resolve(tabs[0] || null);
-            });
-        });
-    }
-
-    // Cache info
-    async function updateCacheInfo() {
-        const tab = await getCurrentTab();
-        let currentPageKey = null;
+// TTS option click handlers
+ttsOptions.forEach(option => {
+    option.addEventListener('click', () => {
+        const engine = option.dataset.engine;
+        document.getElementById(`tts-${engine}`).checked = true;
+        chrome.storage.local.set({ ttsEngine: engine });
+        updateTTSOptionStyles();
         
-        if (tab?.url) {
-            try {
-                const url = new URL(tab.url);
-                currentPageKey = url.hostname + url.pathname;
-            } catch {}
-        }
-        
-        try {
-            const request = indexedDB.open('FocusReaderExtension', 1);
-            request.onsuccess = () => {
-                const db = request.result;
-                if (!db.objectStoreNames.contains('audioCache')) {
-                    cacheInfo.innerHTML = '캐시 없음';
-                    return;
-                }
-                
-                const tx = db.transaction('audioCache', 'readonly');
-                const store = tx.objectStore('audioCache');
-                const allRequest = store.getAll();
-                
-                allRequest.onsuccess = () => {
-                    const all = allRequest.result || [];
-                    const totalCount = all.length;
-                    
-                    // 현재 페이지 캐시 카운트
-                    const pageCount = currentPageKey 
-                        ? all.filter(item => item.pageKey === currentPageKey).length 
-                        : 0;
-                    
-                    // 대략적인 용량 (평균 50KB per audio)
-                    const totalSize = (totalCount * 50 / 1024).toFixed(1);
-                    
-                    if (totalCount === 0) {
-                        cacheInfo.innerHTML = '캐시 없음';
-                        clearPageCacheBtn.disabled = true;
-                        clearAllCacheBtn.disabled = true;
-                    } else {
-                        cacheInfo.innerHTML = `
-                            📦 전체: ${totalCount}개 (~${totalSize}MB)<br>
-                            📄 현재 페이지: ${pageCount}개
-                        `;
-                        clearPageCacheBtn.disabled = pageCount === 0;
-                        clearAllCacheBtn.disabled = false;
-                    }
-                };
-            };
-        } catch {
-            cacheInfo.innerHTML = '캐시 확인 불가';
-        }
-    }
-
-    // Clear current page cache
-    clearPageCacheBtn.addEventListener('click', async () => {
-        const tab = await getCurrentTab();
-        if (!tab?.id) return;
-        
-        chrome.tabs.sendMessage(tab.id, { action: 'clearPageCache' }, (response) => {
-            if (response?.cleared !== undefined) {
-                clearPageCacheBtn.textContent = `✅ ${response.cleared}개 삭제`;
-                setTimeout(() => {
-                    clearPageCacheBtn.textContent = '🗑️ 현재 페이지 캐시 삭제';
-                    updateCacheInfo();
-                }, 1500);
+        // Notify content script
+        chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+            if (tabs[0]) {
+                chrome.tabs.sendMessage(tabs[0].id, { type: 'TTS_ENGINE_CHANGED', engine });
             }
         });
     });
+});
 
-    // Clear all cache
-    clearAllCacheBtn.addEventListener('click', async () => {
-        try {
-            const request = indexedDB.open('FocusReaderExtension', 1);
-            request.onsuccess = () => {
-                const db = request.result;
-                const tx = db.transaction('audioCache', 'readwrite');
-                const store = tx.objectStore('audioCache');
-                store.clear();
-                
-                tx.oncomplete = () => {
-                    clearAllCacheBtn.textContent = '✅ 전체 삭제 완료';
-                    setTimeout(() => {
-                        clearAllCacheBtn.textContent = '🗑️ 전체 캐시 삭제';
-                        updateCacheInfo();
-                    }, 1500);
-                };
-            };
-        } catch {}
+function updateTTSOptionStyles() {
+    ttsOptions.forEach(opt => {
+        const radio = opt.querySelector('input[type="radio"]');
+        if (radio.checked) {
+            opt.classList.add('selected');
+        } else {
+            opt.classList.remove('selected');
+        }
     });
+}
 
-    checkServer();
-    updateCacheInfo();
+// Check service status
+async function checkServices() {
+    const spacyDot = document.getElementById('spacy-dot');
+    const kokoroDot = document.getElementById('kokoro-dot');
+    
+    // Check spaCy
+    try {
+        const resp = await fetch('http://localhost:8000/health', { method: 'GET' });
+        if (resp.ok) {
+            spacyDot.classList.add('online');
+            spacyDot.classList.remove('offline');
+        } else {
+            throw new Error();
+        }
+    } catch {
+        spacyDot.classList.add('offline');
+        spacyDot.classList.remove('online');
+    }
+    
+    // Check Kokoro
+    try {
+        const resp = await fetch('http://localhost:8001/health', { method: 'GET' });
+        if (resp.ok) {
+            kokoroDot.classList.add('online');
+            kokoroDot.classList.remove('offline');
+        } else {
+            throw new Error();
+        }
+    } catch {
+        kokoroDot.classList.add('offline');
+        kokoroDot.classList.remove('online');
+    }
+}
+
+checkServices();
+
+// API Key handling
+const apiKeyInput = document.getElementById('api-key');
+const saveKeyBtn = document.getElementById('save-key');
+
+// Load saved API key
+chrome.storage.local.get(['openaiApiKey'], (result) => {
+    if (result.openaiApiKey) {
+        apiKeyInput.value = '••••••••••••••••';
+    }
+});
+
+saveKeyBtn.addEventListener('click', () => {
+    const key = apiKeyInput.value;
+    if (key && !key.startsWith('••')) {
+        chrome.storage.local.set({ openaiApiKey: key }, () => {
+            apiKeyInput.value = '••••••••••••••••';
+            saveKeyBtn.textContent = '✅ Saved!';
+            setTimeout(() => {
+                saveKeyBtn.textContent = '💾 Save';
+            }, 2000);
+        });
+    }
+});
+
+// Cache management
+const cacheInfo = document.getElementById('cache-info');
+const clearPageBtn = document.getElementById('clear-page-cache');
+const clearAllBtn = document.getElementById('clear-all-cache');
+
+function updateCacheInfo() {
+    chrome.storage.local.get(null, (items) => {
+        const audioKeys = Object.keys(items).filter(k => k.startsWith('audio_'));
+        const totalSize = audioKeys.reduce((sum, k) => {
+            return sum + (items[k]?.length || 0);
+        }, 0);
+        const sizeMB = (totalSize / 1024 / 1024).toFixed(2);
+        cacheInfo.textContent = `${audioKeys.length} audio files (${sizeMB} MB)`;
+    });
+}
+
+updateCacheInfo();
+
+clearPageBtn.addEventListener('click', () => {
+    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+        if (tabs[0]) {
+            const url = new URL(tabs[0].url);
+            const pageKey = url.hostname + url.pathname;
+            
+            chrome.storage.local.get(null, (items) => {
+                const keysToRemove = Object.keys(items).filter(k => 
+                    k.startsWith('audio_') && k.includes(pageKey)
+                );
+                chrome.storage.local.remove(keysToRemove, () => {
+                    updateCacheInfo();
+                    clearPageBtn.textContent = '✅ Cleared!';
+                    setTimeout(() => {
+                        clearPageBtn.textContent = '🗑️ This Page';
+                    }, 2000);
+                });
+            });
+        }
+    });
+});
+
+clearAllBtn.addEventListener('click', () => {
+    chrome.storage.local.get(null, (items) => {
+        const audioKeys = Object.keys(items).filter(k => k.startsWith('audio_'));
+        chrome.storage.local.remove(audioKeys, () => {
+            updateCacheInfo();
+            clearAllBtn.textContent = '✅ Cleared!';
+            setTimeout(() => {
+                clearAllBtn.textContent = '🗑️ Clear All';
+            }, 2000);
+        });
+    });
 });

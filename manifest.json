@@ -10,6 +10,7 @@
   ],
   "host_permissions": [
     "http://localhost:8000/*",
+    "http://localhost:8001/*",
     "https://api.openai.com/*"
   ],
   "action": {
