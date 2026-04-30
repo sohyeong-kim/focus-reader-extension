@@ -102,125 +102,55 @@
             color: #666;
             margin-top: 8px;
         }
-        .tts-option {
+        .hint a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        .hint a:hover {
+            text-decoration: underline;
+        }
+        .coffee-banner {
             display: flex;
             align-items: center;
-            padding: 8px;
-            margin: 4px 0;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .tts-option:hover {
-            background: #333355;
-        }
-        .tts-option.selected {
-            background: #404070;
-            border: 1px solid #58a6ff;
-        }
-        .tts-option input[type="radio"] {
-            width: auto;
-            margin-right: 10px;
-        }
-        .tts-option-info {
-            flex: 1;
-        }
-        .tts-option-name {
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 12px;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #FFDD00 0%, #FFB800 100%);
+            border-radius: 8px;
+            text-decoration: none;
+            color: #000;
             font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .tts-option-desc {
-            font-size: 11px;
-            color: #888;
+        .coffee-banner:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 221, 0, 0.4);
         }
-        .tts-badge {
-            font-size: 10px;
-            padding: 2px 6px;
-            border-radius: 10px;
-            margin-left: 8px;
-        }
-        .badge-free {
-            background: #22c55e;
-            color: #000;
-        }
-        .badge-premium {
-            background: #f59e0b;
-            color: #000;
-        }
-        .service-status {
-            display: flex;
-            gap: 12px;
-            margin-top: 8px;
-        }
-        .service-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 11px;
+        .coffee-banner img {
+            width: 20px;
+            height: 20px;
         }
     </style>
 </head>
 <body>
-    <h2>📖 Focus Reader</h2>
+    <h2>🐶 ADHD Focus Reader</h2>
     
-    <!-- TTS Engine Selection -->
-    <div class="section">
-        <label>🎙️ TTS Engine</label>
-        
-        <div class="tts-option" data-engine="kokoro">
-            <input type="radio" name="tts-engine" value="kokoro" id="tts-kokoro">
-            <div class="tts-option-info">
-                <div class="tts-option-name">
-                    Kokoro TTS
-                    <span class="tts-badge badge-free">FREE</span>
-                </div>
-                <div class="tts-option-desc">Local AI voice (requires Docker)</div>
-            </div>
-        </div>
-        
-        <div class="tts-option" data-engine="openai">
-            <input type="radio" name="tts-engine" value="openai" id="tts-openai">
-            <div class="tts-option-info">
-                <div class="tts-option-name">
-                    OpenAI TTS
-                    <span class="tts-badge badge-premium">PREMIUM</span>
-                </div>
-                <div class="tts-option-desc">High quality (requires API key)</div>
-            </div>
-        </div>
-        
-        <div class="tts-option" data-engine="browser">
-            <input type="radio" name="tts-engine" value="browser" id="tts-browser">
-            <div class="tts-option-info">
-                <div class="tts-option-name">
-                    Browser TTS
-                    <span class="tts-badge badge-free">FREE</span>
-                </div>
-                <div class="tts-option-desc">Built-in browser voice</div>
-            </div>
-        </div>
-    </div>
+    <!-- Buy Me a Coffee -->
+    <a href="https://buymeacoffee.com/thgud1624" target="_blank" class="coffee-banner">
+        ☕ Buy Me a Coffee - Support this project!
+    </a>
     
-    <!-- Service Status -->
-    <div class="section">
-        <label>📡 Service Status</label>
-        <div class="service-status">
-            <div class="service-item">
-                <div class="status-dot" id="spacy-dot"></div>
-                <span>spaCy</span>
-            </div>
-            <div class="service-item">
-                <div class="status-dot" id="kokoro-dot"></div>
-                <span>Kokoro</span>
-            </div>
-        </div>
-    </div>
-    
-    <!-- API Key (for OpenAI) -->
+    <!-- API Key (for OpenAI TTS) -->
     <div class="section" id="api-key-section">
         <label>🔑 OpenAI API Key</label>
         <input type="password" id="api-key" placeholder="sk-...">
         <button class="btn-primary" id="save-key" style="margin-top:8px">💾 Save</button>
+        <div class="hint" style="margin-top:8px; font-size:11px;">
+            Required for audio mode. Get your key at<br>
+            <a href="https://platform.openai.com/api-keys" target="_blank" style="color:#58a6ff;">platform.openai.com/api-keys</a>
+        </div>
     </div>
     
     <!-- Cache -->

@@ -1,5 +1,5 @@
-// Focus Reader - Chrome Extension Content Script
-// 데스크톱 앱과 동일한 방식의 리딩 모드
+// ADHD Focus Reader - Chrome Extension Content Script
+// OpenAI TTS only version for Chrome Web Store
 
 (function() {
     'use strict';
@@ -25,12 +25,71 @@
     let openaiApiKey = '';
     let allPageAudioGenerated = false;
     let isGeneratingAudio = false;
-    let selectedTTSEngine = null; // will be loaded from chrome.storage
     
-    // 페이지 키 (캐시 분리용)
+    // i18n - Language support (default: English)
+    let currentLang = 'en';
+    
+    const translations = {
+        en: {
+            readingMode: 'ADHD Focus Reader',
+            noParagraphs: '⚠️ No paragraphs found',
+            paragraphsFound: (p, s) => `📖 ${p} paragraphs, ${s} sentences! ←→: sentences, ↑↓: paragraphs`,
+            paragraph: 'Paragraph',
+            prevParagraph: 'Previous paragraph (↑)',
+            nextParagraph: 'Next paragraph (↓)',
+            audioMode: '🔊 Audio Mode',
+            audioOn: '🔊 Audio ON',
+            speed: 'Speed',
+            prevSentence: 'Previous sentence (←)',
+            nextSentence: 'Next sentence (→)',
+            generateAllAudio: '🔊 Generate All Page Audio',
+            paragraphsSentences: (p, s) => `📄 ${p} paragraphs · 📝 ${s} sentences`,
+            cachedAudioFree: '💾 Cached audio is free to reuse',
+            generateOnceUseForever: 'Generate once, use forever!',
+            cancel: 'Cancel',
+            generateAll: '🎵 Generate All',
+            generating: (current, total) => `Generating... ${current}/${total}`,
+            completed: (generated, cached) => `✅ Done! ${generated} generated${cached > 0 ? ` + ${cached} cached` : ''}`,
+            generatedComplete: (count) => `✅ ${count} generated!`,
+            allAudioComplete: '✅ All audio generated! Use arrow keys to navigate',
+            setApiKey: '⚠️ Please set OpenAI API key in popup',
+            detected: (n) => `ADHD Focus Reader: ${n} paragraphs detected`
+        },
+        ko: {
+            readingMode: 'ADHD Focus Reader',
+            noParagraphs: '⚠️ 문단을 찾을 수 없습니다',
+            paragraphsFound: (p, s) => `📖 ${p}개 문단, ${s}개 문장! ←→: 문장, ↑↓: 문단`,
+            paragraph: '문단',
+            prevParagraph: '이전 문단 (↑)',
+            nextParagraph: '다음 문단 (↓)',
+            audioMode: '🔊 오디오 모드',
+            audioOn: '🔊 오디오 ON',
+            speed: '속도',
+            prevSentence: '이전 문장 (←)',
+            nextSentence: '다음 문장 (→)',
+            generateAllAudio: '🔊 전체 페이지 오디오 생성',
+            paragraphsSentences: (p, s) => `📄 ${p}개 문단 · 📝 ${s}개 문장`,
+            cachedAudioFree: '💾 캐시된 오디오는 무료로 재사용',
+            generateOnceUseForever: '한 번 생성하면 영원히 사용!',
+            cancel: '취소',
+            generateAll: '🎵 전체 생성',
+            generating: (current, total) => `생성 중... ${current}/${total}`,
+            completed: (generated, cached) => `✅ 완료! ${generated}개 생성${cached > 0 ? ` + ${cached}개 캐시` : ''}`,
+            generatedComplete: (count) => `✅ ${count}개 생성 완료!`,
+            allAudioComplete: '✅ 전체 페이지 오디오 생성 완료! 방향키로 이동하세요',
+            setApiKey: '⚠️ 팝업에서 OpenAI API 키를 설정해주세요',
+            detected: (n) => `ADHD Focus Reader: ${n}개 문단 탐지됨`
+        }
+    };
+    
+    function t(key, ...args) {
+        const text = translations[currentLang]?.[key];
+        if (typeof text === 'function') return text(...args);
+        return text || key;
+    }
+    
+    // Page key for cache separation
     const PAGE_KEY = location.hostname + location.pathname;
-    
-    const SERVER_URL = 'http://localhost:8000';
     
     const CHUNK_COLORS = [
         "#FFE4B5", "#B0E0E6", "#DDA0DD", "#98FB98",
@@ -93,24 +152,29 @@
     // ========== Styles ==========
     const styles = `
         .fr-toggle {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            width: 56px;
-            height: 56px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 50%;
-            border: none;
-            color: white;
-            font-size: 24px;
-            cursor: pointer;
-            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
-            z-index: 2147483646;
-            transition: all 0.3s ease;
+            position: fixed !important;
+            bottom: 24px !important;
+            right: 24px !important;
+            width: 56px !important;
+            height: 56px !important;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            border-radius: 50% !important;
+            border: none !important;
+            color: white !important;
+            font-size: 24px !important;
+            cursor: pointer !important;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4) !important;
+            z-index: 2147483646 !important;
+            transition: all 0.3s ease !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            opacity: 1 !important;
+            visibility: visible !important;
         }
-        .fr-toggle:hover { transform: scale(1.1); }
+        .fr-toggle:hover { transform: scale(1.1) !important; }
         .fr-toggle.active {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
         }
 
         .fr-paragraph {
@@ -127,17 +191,24 @@
         }
 
         html.fr-active {
-            margin-right: 45vw !important;
+            margin-right: 500px !important;
+        }
+        @media (max-width: 1250px) {
+            html.fr-active {
+                margin-right: 40vw !important;
+            }
         }
         body.fr-active {
             margin-right: 0 !important;
         }
 
+        /* 패널 - 오른쪽 사이드바 */
         .fr-panel {
             position: fixed;
             top: 0;
             right: 0;
-            width: 45vw;
+            width: 500px;
+            max-width: 40vw;
             height: 100vh;
             background: #FAFBFC;
             box-shadow: -4px 0 30px rgba(0, 0, 0, 0.12);
@@ -453,40 +524,120 @@
 
     async function loadSettings() {
         return new Promise((resolve) => {
-            chrome.storage.sync.get(['openai_api_key', 'tts_speed'], (result) => {
-                // Also load TTS engine from local storage
-                chrome.storage.local.get(['ttsEngine'], (localResult) => {
+            // Load TTS speed from sync storage
+            chrome.storage.sync.get(['tts_speed'], (syncResult) => {
+                console.log('ADHD Focus Reader: Loaded sync settings:', syncResult);
+                if (syncResult.tts_speed) ttsSpeed = syncResult.tts_speed;
+                
+                // Load API key and TTS engine from local storage
+                chrome.storage.local.get(['openaiApiKey', 'ttsEngine'], (localResult) => {
+                    console.log('ADHD Focus Reader: Loaded local settings:', localResult);
+                    if (localResult.openaiApiKey) openaiApiKey = localResult.openaiApiKey;
                     if (localResult.ttsEngine) selectedTTSEngine = localResult.ttsEngine;
+                    resolve();
                 });
-                if (result.openai_api_key) openaiApiKey = result.openai_api_key;
-                if (result.tts_speed) ttsSpeed = result.tts_speed;
-                resolve();
             });
         });
     }
 
     function createToggleButton() {
         if (floatingButton) return;
+        if (document.getElementById('fr-toggle-btn')) return; // 이미 존재하면 스킵
+        
         floatingButton = document.createElement('button');
         floatingButton.className = 'fr-toggle';
+        floatingButton.id = 'fr-toggle-btn';
         floatingButton.innerHTML = '📖';
-        floatingButton.title = 'Focus Reader 리딩 모드';
+        floatingButton.title = t('readingMode');
         floatingButton.onclick = toggleReadingMode;
-        document.body.appendChild(floatingButton);
+        
+        // body 대신 documentElement에 추가 (더 안정적)
+        (document.body || document.documentElement).appendChild(floatingButton);
+        console.log('ADHD Focus Reader: Toggle button created');
     }
 
-    // ========== 문단 탐지 ==========
+    // ========== Paragraph Detection ==========
     function detectParagraphs() {
         paragraphs = [];
-        const candidates = document.querySelectorAll('p, article > div, section > div, [class*="content"] > div, [class*="paragraph"], [class*="text"]');
+        
+        // 다양한 플랫폼 지원 셀렉터
+        const selectors = [
+            // 기본
+            'p',
+            'article > div',
+            'section > div',
+            
+            // 일반적인 클래스
+            '[class*="content"] > div',
+            '[class*="paragraph"]',
+            '[class*="text"]',
+            '[class*="block"]',
+            
+            // 인용문, 리스트
+            'blockquote',
+            'li',
+            
+            // 인덴트된 요소
+            '[style*="margin-left"]',
+            '[style*="padding-left"]',
+            
+            // Streamlit
+            '[class*="stMarkdown"]',
+            '[class*="stText"]',
+            '[class*="element-container"] p',
+            '[class*="element-container"] div',
+            '[data-testid="stMarkdownContainer"]',
+            '[data-testid="stMarkdownContainer"] p',
+            '[data-testid="stMarkdownContainer"] div',
+            
+            // Notion
+            '[class*="notion-text"]',
+            '[class*="notion-paragraph"]',
+            '[class*="notion-quote"]',
+            '[class*="notion-callout"]',
+            
+            // Medium / Substack
+            '[class*="graf"]',
+            '[class*="post-content"] > *',
+            
+            // GitHub
+            '.markdown-body > p',
+            '.markdown-body > blockquote',
+            '.markdown-body > ul > li',
+            '.markdown-body > ol > li',
+            
+            // 기타 CMS
+            '[class*="entry-content"] > *',
+            '[class*="article-body"] > *',
+            '[class*="post-body"] > *',
+            'main p',
+            'main div > p'
+        ];
+        
+        const candidates = document.querySelectorAll(selectors.join(', '));
         
         candidates.forEach(el => {
             const text = el.textContent.trim();
-            if (text.length < 100) return;
-            if (el.querySelector('p, div, article, section')) return;
+            if (text.length < 50) return; // 50자 이상
+            
+            // 내부에 이미 처리된 p가 있으면 스킵 (단, 짧은 것들만)
+            const innerPs = el.querySelectorAll('p');
+            const hasSubstantialInnerP = Array.from(innerPs).some(p => p.textContent.trim().length > 50);
+            if (hasSubstantialInnerP) return;
+            
+            // div 내부에 다른 블록이 있으면 스킵
+            if (el.tagName === 'DIV' && el.querySelector('div, article, section')) return;
+            
+            // 이미 포함된 요소인지 확인
             if (paragraphs.some(p => p.element.contains(el) || el.contains(p.element))) return;
             
+            // 숨겨진 요소 스킵
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden') return;
+            
             const sents = splitSentences(text);
+            if (sents.length === 0) return;
+            
             paragraphs.push({
                 element: el,
                 text: text,
@@ -494,7 +645,7 @@
             });
         });
         
-        console.log(`Focus Reader: ${paragraphs.length}개 문단 탐지됨`);
+        console.log(t('detected', paragraphs.length));
         return paragraphs;
     }
 
@@ -506,7 +657,7 @@
         return paragraphs.reduce((sum, p) => sum + p.text.length, 0);
     }
 
-    // ========== 리딩 모드 ==========
+    // ========== Reading Mode ==========
     function toggleReadingMode() {
         isReadingMode = !isReadingMode;
         floatingButton.classList.toggle('active', isReadingMode);
@@ -523,7 +674,7 @@
         detectParagraphs();
         
         if (paragraphs.length === 0) {
-            showToast('⚠️ 문단을 찾을 수 없습니다');
+            showToast(t('noParagraphs'));
             isReadingMode = false;
             floatingButton.classList.remove('active');
             floatingButton.innerHTML = '📖';
@@ -533,20 +684,20 @@
         paragraphs.forEach((p, i) => {
             p.element.classList.add('fr-paragraph');
             p.element.dataset.frIndex = i;
-            p.element.addEventListener('click', handleParagraphClick);
+            p.element.addEventListener('dblclick', handleParagraphClick);
         });
 
         currentParagraphIndex = 0;
         openPanel();
         loadParagraph(0);
         
-        showToast(`📖 ${paragraphs.length}개 문단, ${getTotalSentenceCount()}개 문장! ←→: 문장, ↑↓: 문단`);
+        showToast(t('paragraphsFound', paragraphs.length, getTotalSentenceCount()));
     }
 
     function disableReadingMode() {
         paragraphs.forEach(p => {
             p.element.classList.remove('fr-paragraph', 'current');
-            p.element.removeEventListener('click', handleParagraphClick);
+            p.element.removeEventListener('dblclick', handleParagraphClick);
             delete p.element.dataset.frIndex;
         });
         paragraphs = [];
@@ -563,7 +714,7 @@
         }
     }
 
-    // ========== 문단 로드 ==========
+    // ========== Load Paragraph ==========
     function loadParagraph(index) {
         if (index < 0 || index >= paragraphs.length) return;
         
@@ -592,11 +743,11 @@
     function updateParagraphNav() {
         const info = document.getElementById('fr-para-info');
         if (info) {
-            info.textContent = `문단 ${currentParagraphIndex + 1} / ${paragraphs.length}`;
+            info.textContent = `${t('paragraph')} ${currentParagraphIndex + 1} / ${paragraphs.length}`;
         }
     }
 
-    // ========== 문장 ==========
+    // ========== Sentences ==========
     function splitSentences(text) {
         const abbrs = ['et al', 'i\\.e', 'e\\.g', 'Fig', 'Dr', 'Mr', 'Mrs', 'Prof', 'vs', 'etc', 'al'];
         let processed = text;
@@ -628,26 +779,98 @@
         }).filter(s => s.length > 0);
     }
 
-    async function fetchChunksForSentences() {
-        try {
-            const response = await fetch(`${SERVER_URL}/chunk`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sentences })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                sentenceChunks = data.results.map(r => r.chunks || []);
-            }
-        } catch (e) {
-            console.log('Focus Reader: spaCy 서버 연결 안됨');
+    // ========== Chunking with Compromise.js ==========
+    function chunkSentenceWithCompromise(sentence) {
+        if (typeof nlp === 'undefined') {
+            return null; // Compromise not loaded
         }
         
+        try {
+            const doc = nlp(sentence);
+            const chunks = [];
+            
+            // 명사구 (Noun Phrases)
+            doc.nouns().forEach(n => {
+                chunks.push({ text: n.text(), type: 'NP' });
+            });
+            
+            // 동사구 (Verb Phrases)  
+            doc.verbs().forEach(v => {
+                chunks.push({ text: v.text(), type: 'VP' });
+            });
+            
+            // 전치사구, 형용사 등 나머지
+            doc.adjectives().forEach(a => {
+                chunks.push({ text: a.text(), type: 'ADJ' });
+            });
+            
+            doc.adverbs().forEach(a => {
+                chunks.push({ text: a.text(), type: 'ADV' });
+            });
+            
+            // 청크가 없으면 전체 문장을 하나의 청크로
+            if (chunks.length === 0) {
+                return null;
+            }
+            
+            // 문장 순서대로 정렬 (원본 위치 기준)
+            const orderedChunks = [];
+            let remaining = sentence;
+            const usedTexts = new Set();
+            
+            // 단어 단위로 분석하여 청크 재구성
+            const words = sentence.split(/\s+/);
+            let currentChunk = [];
+            let currentType = null;
+            
+            for (const word of words) {
+                // 이 단어가 어떤 청크에 속하는지 찾기
+                let foundType = null;
+                for (const chunk of chunks) {
+                    if (chunk.text.includes(word) && !usedTexts.has(word)) {
+                        foundType = chunk.type;
+                        break;
+                    }
+                }
+                
+                if (foundType === currentType || currentType === null) {
+                    currentChunk.push(word);
+                    currentType = foundType || 'OTHER';
+                } else {
+                    if (currentChunk.length > 0) {
+                        orderedChunks.push({ 
+                            text: currentChunk.join(' '), 
+                            type: currentType 
+                        });
+                    }
+                    currentChunk = [word];
+                    currentType = foundType || 'OTHER';
+                }
+                usedTexts.add(word);
+            }
+            
+            // 마지막 청크 추가
+            if (currentChunk.length > 0) {
+                orderedChunks.push({ 
+                    text: currentChunk.join(' '), 
+                    type: currentType 
+                });
+            }
+            
+            return orderedChunks.length > 0 ? orderedChunks : null;
+        } catch (e) {
+            console.log('Compromise chunking error:', e);
+            return null;
+        }
+    }
+
+    function fetchChunksForSentences() {
+        // Compromise.js로 로컬에서 청킹
+        sentenceChunks = sentences.map(sent => chunkSentenceWithCompromise(sent));
         renderSentences();
     }
 
-    // ========== 패널 ==========
+    // ========== Panel ==========
     function openPanel() {
         if (readingPanel) {
             readingPanel.classList.add('open');
@@ -660,18 +883,18 @@
         readingPanel.className = 'fr-panel open';
         readingPanel.innerHTML = `
             <div class="fr-header">
-                <span class="fr-title">📖 Focus Reader</span>
+                <span class="fr-title">🐶 ADHD Focus Reader</span>
                 <button class="fr-close" id="fr-close">✕</button>
             </div>
             <div class="fr-para-nav">
-                <button class="fr-para-nav-btn" id="fr-para-prev" title="이전 문단 (↑)">◀</button>
-                <span class="fr-para-info" id="fr-para-info">문단 1 / 1</span>
-                <button class="fr-para-nav-btn" id="fr-para-next" title="다음 문단 (↓)">▶</button>
+                <button class="fr-para-nav-btn" id="fr-para-prev" title="${t('prevParagraph')}">◀</button>
+                <span class="fr-para-info" id="fr-para-info">${t('paragraph')} 1 / 1</span>
+                <button class="fr-para-nav-btn" id="fr-para-next" title="${t('nextParagraph')}">▶</button>
             </div>
             <div class="fr-toolbar">
-                <button class="fr-btn fr-btn-secondary" id="fr-audio-toggle">🔊 오디오 모드</button>
+                <button class="fr-btn fr-btn-secondary" id="fr-audio-toggle">${t('audioMode')}</button>
                 <div class="fr-speed">
-                    <span>속도</span>
+                    <span>${t('speed')}</span>
                     <input type="range" id="fr-speed" min="0.5" max="2" step="0.1" value="${ttsSpeed}">
                     <span id="fr-speed-val">${ttsSpeed}x</span>
                 </div>
@@ -681,15 +904,15 @@
                 <div class="fr-audio-progress">
                     <div class="fr-audio-progress-bar" id="fr-audio-progress"></div>
                 </div>
-                <span class="fr-audio-text" id="fr-audio-text">준비 중...</span>
+                <span class="fr-audio-text" id="fr-audio-text">Ready...</span>
             </div>
             <div class="fr-sent-nav">
-                <button class="fr-nav-btn" id="fr-sent-prev" title="이전 문장 (←)">←</button>
+                <button class="fr-nav-btn" id="fr-sent-prev" title="${t('prevSentence')}">←</button>
                 <div class="fr-progress">
                     <div class="fr-progress-bar" id="fr-sent-progress"></div>
                 </div>
                 <span class="fr-nav-info" id="fr-sent-info">1 / 1</span>
-                <button class="fr-nav-btn" id="fr-sent-next" title="다음 문장 (→)">→</button>
+                <button class="fr-nav-btn" id="fr-sent-next" title="${t('nextSentence')}">→</button>
             </div>
             <div class="fr-content" id="fr-content"></div>
         `;
@@ -833,34 +1056,17 @@
         if (active) active.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // ========== 오디오 ==========
+    // ========== Audio ==========
     async function toggleAudioMode() {
-        // TTS 엔진 선택 안 했으면 먼저 선택
-        if (!selectedTTSEngine) {
-            const choice = await showTTSSelectModal();
-            if (!choice) return;
-            selectedTTSEngine = choice;
-            chrome.storage.local.set({ ttsEngine: choice });
-        }
+        // Check OpenAI API key first
+        if (!openaiApiKey) await loadSettings();
         
-        // OpenAI 선택했는데 API 키 없으면
-        if (selectedTTSEngine === 'openai') {
-            if (!openaiApiKey) await loadSettings();
-            if (!openaiApiKey) {
-                showToast('⚠️ 팝업에서 OpenAI API 키를 설정해주세요');
-                return;
-            }
-        }
-        
-        // Kokoro 선택 시 서버 체크
-        if (selectedTTSEngine === 'kokoro') {
-            try {
-                const res = await fetch('http://localhost:8001/health');
-                if (!res.ok) throw new Error();
-            } catch (e) {
-                showToast('⚠️ Kokoro 서버가 실행되지 않았습니다. python server_kokoro.py 실행하세요');
-                return;
-            }
+        if (!openaiApiKey) {
+            // Show API key input modal
+            const apiKey = await showApiKeyInputModal();
+            if (!apiKey) return;
+            openaiApiKey = apiKey;
+            chrome.storage.local.set({ openaiApiKey: apiKey });
         }
 
         const btn = document.getElementById('fr-audio-toggle');
@@ -876,7 +1082,7 @@
 
             audioModeEnabled = true;
             btn.classList.add('active');
-            btn.textContent = '🔊 오디오 ON';
+            btn.textContent = t('audioOn');
             
             await generateAllPageAudio();
             playCurrentSentence();
@@ -884,79 +1090,88 @@
             audioModeEnabled = false;
             stopAudio();
             btn.classList.remove('active');
-            btn.textContent = '🔊 오디오 모드';
+            btn.textContent = t('audioMode');
             document.getElementById('fr-audio-status').classList.add('hidden');
         }
     }
 
-    function showTTSSelectModal() {
+    function showApiKeyInputModal() {
         return new Promise((resolve) => {
             const modal = document.createElement('div');
             modal.className = 'fr-modal';
             modal.innerHTML = `
-                <div class="fr-modal-content" style="max-width: 360px;">
-                    <div class="fr-modal-title">🎙️ TTS 엔진 선택</div>
-                    <div style="margin-bottom: 16px;">
-                        <div class="fr-tts-option" id="fr-tts-kokoro" style="padding: 14px; border: 2px solid #444; border-radius: 10px; cursor: pointer; margin-bottom: 10px; transition: all 0.2s;">
-                            <div style="font-weight: 600; margin-bottom: 4px;">🆓 Kokoro TTS (로컬)</div>
-                            <div style="font-size: 13px; color: #999;">무료 • 로컬에서 실행 • 빠름</div>
-                            <div style="font-size: 12px; color: #10b981; margin-top: 4px;">💰 비용: $0</div>
-                        </div>
-                        <div class="fr-tts-option" id="fr-tts-openai" style="padding: 14px; border: 2px solid #444; border-radius: 10px; cursor: pointer; transition: all 0.2s;">
-                            <div style="font-weight: 600; margin-bottom: 4px;">⭐ OpenAI TTS (클라우드)</div>
-                            <div style="font-size: 13px; color: #999;">최고 품질 • API 키 필요</div>
-                            <div style="font-size: 12px; color: #f59e0b; margin-top: 4px;">💰 $15 / 1M 글자</div>
-                        </div>
+                <div class="fr-modal-content" style="max-width: 400px;">
+                    <div class="fr-modal-title">🔑 OpenAI API Key Required</div>
+                    <div class="fr-modal-info">
+                        Audio mode requires an OpenAI API key.<br>
+                        Get your key at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:#58a6ff;">platform.openai.com/api-keys</a>
+                    </div>
+                    <input type="password" id="fr-api-key-input" placeholder="sk-..." style="
+                        width: 100%;
+                        padding: 12px;
+                        border: 2px solid #ddd;
+                        border-radius: 8px;
+                        font-size: 14px;
+                        margin: 16px 0;
+                        box-sizing: border-box;
+                    ">
+                    <div style="font-size: 12px; color: #888; margin-bottom: 16px;">
+                        💾 Your key is stored locally and never sent to any server except OpenAI.
                     </div>
                     <div class="fr-modal-buttons">
-                        <button class="fr-modal-btn secondary" id="fr-modal-cancel">취소</button>
+                        <button class="fr-modal-btn secondary" id="fr-modal-cancel">${t('cancel')}</button>
+                        <button class="fr-modal-btn primary" id="fr-modal-confirm">💾 Save & Continue</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(modal);
 
-            const kokoroBtn = document.getElementById('fr-tts-kokoro');
-            const openaiBtn = document.getElementById('fr-tts-openai');
-            
-            kokoroBtn.onmouseenter = () => kokoroBtn.style.borderColor = '#667eea';
-            kokoroBtn.onmouseleave = () => kokoroBtn.style.borderColor = '#444';
-            openaiBtn.onmouseenter = () => openaiBtn.style.borderColor = '#667eea';
-            openaiBtn.onmouseleave = () => openaiBtn.style.borderColor = '#444';
+            const input = document.getElementById('fr-api-key-input');
+            input.focus();
 
-            kokoroBtn.onclick = () => { modal.remove(); resolve('kokoro'); };
-            openaiBtn.onclick = () => { modal.remove(); resolve('openai'); };
-            document.getElementById('fr-modal-cancel').onclick = () => { modal.remove(); resolve(null); };
+            document.getElementById('fr-modal-cancel').onclick = () => {
+                modal.remove();
+                resolve(null);
+            };
+            document.getElementById('fr-modal-confirm').onclick = () => {
+                const key = input.value.trim();
+                if (key && key.startsWith('sk-')) {
+                    modal.remove();
+                    resolve(key);
+                } else {
+                    input.style.borderColor = '#ef4444';
+                    input.placeholder = 'Invalid key - must start with sk-';
+                }
+            };
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    document.getElementById('fr-modal-confirm').click();
+                }
+            };
         });
     }
 
     function showCostModal(numSentences, totalChars, cost, krw, numParagraphs) {
         return new Promise((resolve) => {
-            const isKokoro = selectedTTSEngine === 'kokoro';
-            const costText = isKokoro 
-                ? '<div class="fr-modal-cost" style="color: #10b981;">$0 (무료)</div>'
-                : `<div class="fr-modal-cost">~$${cost} (약 ${krw}원)</div>`;
-            const engineName = isKokoro ? 'Kokoro (무료)' : 'OpenAI';
-            
             const modal = document.createElement('div');
             modal.className = 'fr-modal';
             modal.innerHTML = `
                 <div class="fr-modal-content">
-                    <div class="fr-modal-title">🔊 전체 페이지 오디오 생성 (${engineName})</div>
+                    <div class="fr-modal-title">${t('generateAllAudio')}</div>
                     <div class="fr-modal-info">
-                        📄 ${numParagraphs}개 문단 · 📝 ${numSentences}개 문장<br>
-                        📊 ${totalChars.toLocaleString()}자
+                        ${t('paragraphsSentences', numParagraphs, numSentences)}<br>
+                        📊 ${totalChars.toLocaleString()} characters
                     </div>
-                    ${costText}
+                    <div class="fr-modal-cost" style="color: #f59e0b;">
+                        ⚠️ ~$${cost} (~${krw}₩)
+                    </div>
                     <div class="fr-modal-info" style="font-size:13px; color:#888;">
-                        💾 캐시된 오디오는 무료 재사용<br>
-                        한 번 생성하면 계속 사용 가능!
-                    </div>
-                    <div style="margin-top: 12px; text-align: center;">
-                        <button class="fr-modal-btn" style="font-size: 11px; padding: 4px 8px;" id="fr-change-engine">🔄 엔진 변경</button>
+                        ${t('cachedAudioFree')}<br>
+                        ${t('generateOnceUseForever')}
                     </div>
                     <div class="fr-modal-buttons">
-                        <button class="fr-modal-btn secondary" id="fr-modal-cancel">취소</button>
-                        <button class="fr-modal-btn primary" id="fr-modal-confirm">🎵 전체 생성</button>
+                        <button class="fr-modal-btn secondary" id="fr-modal-cancel">${t('cancel')}</button>
+                        <button class="fr-modal-btn primary" id="fr-modal-confirm">${t('generateAll')}</button>
                     </div>
                 </div>
             `;
@@ -969,13 +1184,6 @@
             document.getElementById('fr-modal-confirm').onclick = () => {
                 modal.remove();
                 resolve(true);
-            };
-            document.getElementById('fr-change-engine').onclick = async () => {
-                modal.remove();
-                selectedTTSEngine = null;
-                localStorage.removeItem('fr_tts_engine');
-                toggleAudioMode(); // 다시 시작
-                resolve(false);
             };
         });
     }
@@ -994,8 +1202,6 @@
         let cached = 0;
         let totalProcessed = 0;
         const totalSentences = getTotalSentenceCount();
-        const isKokoro = selectedTTSEngine === 'kokoro';
-        const engineLabel = isKokoro ? '(Kokoro)' : '(OpenAI)';
         
         for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
             const para = paragraphs[pIdx];
@@ -1011,48 +1217,29 @@
                     audioCache[cacheKey] = cachedData.audio;
                     cached++;
                 } else {
-                    textEl.textContent = `${engineLabel} 생성 중... ${totalProcessed + 1}/${totalSentences}`;
+                    textEl.textContent = t('generating', totalProcessed + 1, totalSentences);
                     
                     try {
-                        let audioData;
-                        
-                        if (isKokoro) {
-                            // Kokoro TTS (로컬)
-                            const response = await fetch('http://localhost:8001/tts', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    text: sentence,
-                                    voice: 'am_echo',
-                                    speed: 1.0
-                                })
-                            });
-                            if (!response.ok) throw new Error('Kokoro 오류');
-                            const blob = await response.blob();
-                            const arrayBuffer = await blob.arrayBuffer();
-                            audioData = new Uint8Array(arrayBuffer);
-                        } else {
-                            // OpenAI TTS
-                            const response = await fetch('https://api.openai.com/v1/audio/speech', {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${openaiApiKey}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    model: 'gpt-4o-mini-tts',
-                                    input: sentence,
-                                    voice: 'cedar',
-                                    speed: 1.0
-                                })
-                            });
+                        // OpenAI TTS
+                        const response = await fetch('https://api.openai.com/v1/audio/speech', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${openaiApiKey}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                model: 'gpt-4o-mini-tts',
+                                input: sentence,
+                                voice: 'coral',
+                                speed: 1.0
+                            })
+                        });
 
-                            if (!response.ok) throw new Error('API 오류');
+                        if (!response.ok) throw new Error('API error');
 
-                            const blob = await response.blob();
-                            const arrayBuffer = await blob.arrayBuffer();
-                            audioData = new Uint8Array(arrayBuffer);
-                        }
+                        const blob = await response.blob();
+                        const arrayBuffer = await blob.arrayBuffer();
+                        const audioData = new Uint8Array(arrayBuffer);
                         
                         audioCache[cacheKey] = audioData;
                         await dbPut(cacheKey, { audio: audioData, timestamp: Date.now() });
@@ -1072,16 +1259,14 @@
         allPageAudioGenerated = true;
         isGeneratingAudio = false;
         
-        if (isKokoro) {
-            textEl.textContent = `✅ 완료! ${generated}개 생성 (무료)${cached > 0 ? ` + ${cached}개 캐시` : ''}`;
-        } else if (cached > 0) {
+        if (cached > 0) {
             const savedCost = (cached * 100 * 15 / 1000000).toFixed(4);
-            textEl.textContent = `✅ 완료! ${cached}개 캐시 (~$${savedCost} 절약)`;
+            textEl.textContent = t('completed', generated, cached) + ` (~$${savedCost} saved)`;
         } else {
-            textEl.textContent = `✅ ${generated}개 생성 완료!`;
+            textEl.textContent = t('generatedComplete', generated);
         }
         
-        showToast('✅ 전체 페이지 오디오 생성 완료! 방향키로 이동하세요');
+        showToast(t('allAudioComplete'));
     }
 
     async function playCurrentSentence() {
@@ -1216,11 +1401,20 @@
 
     // ========== Init ==========
     async function init() {
+        // DOM이 준비될 때까지 대기
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => initAfterDOM());
+        } else {
+            initAfterDOM();
+        }
+    }
+    
+    async function initAfterDOM() {
         injectStyles();
         await initDB();
         await loadSettings();
         createToggleButton();
-        console.log('Focus Reader Extension loaded');
+        console.log('ADHD Focus Reader Extension loaded');
     }
 
     init();
