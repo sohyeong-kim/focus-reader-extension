@@ -33,7 +33,13 @@ chrome.storage.local.get(['ttsVoice'], (result) => {
 });
 
 voiceSelect.addEventListener('change', () => {
-    chrome.storage.local.set({ ttsVoice: voiceSelect.value });
+    const voice = voiceSelect.value;
+    chrome.storage.local.set({ ttsVoice: voice });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+            chrome.tabs.sendMessage(tabs[0].id, { type: 'TTS_VOICE_CHANGED', voice });
+        }
+    });
 });
 
 // Cache management

@@ -1212,7 +1212,7 @@
                 if (!audioModeEnabled) break;
                 
                 const sentence = para.sentences[sIdx];
-                const cacheKey = hashText(sentence);
+                const cacheKey = hashText(sentence + '_' + ttsVoice);
                 
                 const cachedData = await dbGet(cacheKey);
                 if (cachedData && cachedData.audio) {
@@ -1277,7 +1277,7 @@
         stopAudio();
         
         const sentence = sentences[currentSentenceIndex];
-        const cacheKey = hashText(sentence);
+        const cacheKey = hashText(sentence + '_' + ttsVoice);
         const audioData = audioCache[cacheKey];
 
         if (!audioData) {
@@ -1357,6 +1357,12 @@
         if (request.type === 'TTS_ENGINE_CHANGED') {
             selectedTTSEngine = request.engine;
             console.log('TTS Engine changed to:', selectedTTSEngine);
+            return;
+        }
+        if (request.type === 'TTS_VOICE_CHANGED') {
+            ttsVoice = request.voice;
+            audioCache = {}; // clear in-memory cache so new voice is used immediately
+            console.log('TTS Voice changed to:', ttsVoice);
             return;
         }
         if (request.action === 'getPageKey') {
