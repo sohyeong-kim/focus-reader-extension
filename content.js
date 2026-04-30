@@ -530,11 +530,9 @@
                 console.log('ADHD Focus Reader: Loaded sync settings:', syncResult);
                 if (syncResult.tts_speed) ttsSpeed = syncResult.tts_speed;
                 
-                // Load API key and TTS engine from local storage
-                chrome.storage.local.get(['openaiApiKey', 'ttsEngine', 'ttsVoice'], (localResult) => {
+                chrome.storage.local.get(['openaiApiKey', 'ttsVoice'], (localResult) => {
                     console.log('ADHD Focus Reader: Loaded local settings:', localResult);
                     if (localResult.openaiApiKey) openaiApiKey = localResult.openaiApiKey;
-                    if (localResult.ttsEngine) selectedTTSEngine = localResult.ttsEngine;
                     if (localResult.ttsVoice) ttsVoice = localResult.ttsVoice;
                     resolve();
                 });
@@ -1354,11 +1352,6 @@
 
     // ========== 메시지 핸들러 (팝업에서 캐시 삭제 요청) ==========
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.type === 'TTS_ENGINE_CHANGED') {
-            selectedTTSEngine = request.engine;
-            console.log('TTS Engine changed to:', selectedTTSEngine);
-            return;
-        }
         if (request.action === 'getPageKey') {
             sendResponse({ pageKey: PAGE_KEY });
         } else if (request.action === 'clearPageCache') {

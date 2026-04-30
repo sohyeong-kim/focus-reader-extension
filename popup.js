@@ -21,19 +21,71 @@ chrome.storage.local.get(['ttsVoice'], (result) => {
 
 saveKeyBtn.addEventListener('click', () => {
     const key = apiKeyInput.value;
-    const voice = voiceSelect.value;
-    const updates = { ttsVoice: voice };
+    if (!key || key.startsWith('••')) return;
 
-    if (key && !key.startsWith('••')) {
-        updates.openaiApiKey = key;
+    chrome.storage.local.set({ openaiApiKey: key }, () => {
+        apiKeyInput.value = '••••••••••••••••';
+        saveKeyBtn.textContent = '✅ Saved!';
+        setTimeout(() => { saveKeyBtn.textContent = '💾 Save'; }, 2000);
+    });
+});
+
+// Voice save & preview
+const saveVoiceBtn = document.getElementById('save-voice');
+let previewAudio = null;
+
+async function previewVoice(voice) {
+    const apiKey = await new Promise(r =>
+        chrome.storage.local.get(['openaiApiKey'], res => r(res.openaiApiKey))
+    );
+    if (!apiKey) {
+        saveVoiceBtn.textContent = '⚠️ Set API key first';
+        setTimeout(() => { saveVoiceBtn.textContent = '💾 Save & Preview'; }, 2500);
+        return;
     }
 
-    chrome.storage.local.set(updates, () => {
-        if (updates.openaiApiKey) apiKeyInput.value = '••••••••••••••••';
-        saveKeyBtn.textContent = '✅ Saved!';
-        setTimeout(() => {
-            saveKeyBtn.textContent = '💾 Save';
-        }, 2000);
+    const voiceName = voice.charAt(0).toUpperCase() + voice.slice(1);
+
+    try {
+        const response = await fetch('https://api.openai.com/v1/audio/speech', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini-tts',
+                input: `Hello there, I'm ${voiceName}.`,
+                voice: voice,
+                speed: 1.0
+            })
+        });
+
+        if (!response.ok) throw new Error(`OpenAI API ${response.status}`);
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        if (previewAudio) {
+            previewAudio.pause();
+            if (previewAudio.src) URL.revokeObjectURL(previewAudio.src);
+        }
+        previewAudio = new Audio(url);
+        previewAudio.onended = () => URL.revokeObjectURL(url);
+        previewAudio.play();
+    } catch (e) {
+        console.error('Voice preview failed:', e);
+        saveVoiceBtn.textContent = '❌ Preview failed';
+        setTimeout(() => { saveVoiceBtn.textContent = '💾 Save & Preview'; }, 2500);
+    }
+}
+
+saveVoiceBtn.addEventListener('click', () => {
+    const voice = voiceSelect.value;
+    chrome.storage.local.set({ ttsVoice: voice }, () => {
+        saveVoiceBtn.textContent = `✅ Saved: ${voice} — previewing...`;
+        setTimeout(() => { saveVoiceBtn.textContent = '💾 Save & Preview'; }, 2500);
+        previewVoice(voice);
     });
 });
 
