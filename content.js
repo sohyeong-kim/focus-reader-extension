@@ -22,6 +22,7 @@
     let isPlaying = false;
     let audioModeEnabled = false;
     let ttsSpeed = 1.4;
+    let ttsVoice = 'coral';
     let openaiApiKey = '';
     let allPageAudioGenerated = false;
     let isGeneratingAudio = false;
@@ -530,10 +531,11 @@
                 if (syncResult.tts_speed) ttsSpeed = syncResult.tts_speed;
                 
                 // Load API key and TTS engine from local storage
-                chrome.storage.local.get(['openaiApiKey', 'ttsEngine'], (localResult) => {
+                chrome.storage.local.get(['openaiApiKey', 'ttsEngine', 'ttsVoice'], (localResult) => {
                     console.log('ADHD Focus Reader: Loaded local settings:', localResult);
                     if (localResult.openaiApiKey) openaiApiKey = localResult.openaiApiKey;
                     if (localResult.ttsEngine) selectedTTSEngine = localResult.ttsEngine;
+                    if (localResult.ttsVoice) ttsVoice = localResult.ttsVoice;
                     resolve();
                 });
             });
@@ -1230,7 +1232,7 @@
                             body: JSON.stringify({
                                 model: 'gpt-4o-mini-tts',
                                 input: sentence,
-                                voice: 'coral',
+                                voice: ttsVoice,
                                 speed: 1.0
                             })
                         });

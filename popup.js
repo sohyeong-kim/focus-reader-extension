@@ -25,6 +25,17 @@ saveKeyBtn.addEventListener('click', () => {
     }
 });
 
+// Voice selection
+const voiceSelect = document.getElementById('tts-voice');
+
+chrome.storage.local.get(['ttsVoice'], (result) => {
+    if (result.ttsVoice) voiceSelect.value = result.ttsVoice;
+});
+
+voiceSelect.addEventListener('change', () => {
+    chrome.storage.local.set({ ttsVoice: voiceSelect.value });
+});
+
 // Cache management
 const cacheInfo = document.getElementById('cache-info');
 const clearPageBtn = document.getElementById('clear-page-cache');
