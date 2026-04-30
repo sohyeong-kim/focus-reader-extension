@@ -12,19 +12,6 @@ chrome.storage.local.get(['openaiApiKey'], (result) => {
     }
 });
 
-saveKeyBtn.addEventListener('click', () => {
-    const key = apiKeyInput.value;
-    if (key && !key.startsWith('••')) {
-        chrome.storage.local.set({ openaiApiKey: key }, () => {
-            apiKeyInput.value = '••••••••••••••••';
-            saveKeyBtn.textContent = '✅ Saved!';
-            setTimeout(() => {
-                saveKeyBtn.textContent = '💾 Save';
-            }, 2000);
-        });
-    }
-});
-
 // Voice selection
 const voiceSelect = document.getElementById('tts-voice');
 
@@ -32,13 +19,21 @@ chrome.storage.local.get(['ttsVoice'], (result) => {
     if (result.ttsVoice) voiceSelect.value = result.ttsVoice;
 });
 
-voiceSelect.addEventListener('change', () => {
+saveKeyBtn.addEventListener('click', () => {
+    const key = apiKeyInput.value;
     const voice = voiceSelect.value;
-    chrome.storage.local.set({ ttsVoice: voice });
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, { type: 'TTS_VOICE_CHANGED', voice });
-        }
+    const updates = { ttsVoice: voice };
+
+    if (key && !key.startsWith('••')) {
+        updates.openaiApiKey = key;
+    }
+
+    chrome.storage.local.set(updates, () => {
+        if (updates.openaiApiKey) apiKeyInput.value = '••••••••••••••••';
+        saveKeyBtn.textContent = '✅ Saved!';
+        setTimeout(() => {
+            saveKeyBtn.textContent = '💾 Save';
+        }, 2000);
     });
 });
 

@@ -1060,8 +1060,8 @@
 
     // ========== Audio ==========
     async function toggleAudioMode() {
-        // Check OpenAI API key first
-        if (!openaiApiKey) await loadSettings();
+        // Always reload settings so voice/key changes from popup take effect
+        await loadSettings();
         
         if (!openaiApiKey) {
             // Show API key input modal
@@ -1357,12 +1357,6 @@
         if (request.type === 'TTS_ENGINE_CHANGED') {
             selectedTTSEngine = request.engine;
             console.log('TTS Engine changed to:', selectedTTSEngine);
-            return;
-        }
-        if (request.type === 'TTS_VOICE_CHANGED') {
-            ttsVoice = request.voice;
-            audioCache = {}; // clear in-memory cache so new voice is used immediately
-            console.log('TTS Voice changed to:', ttsVoice);
             return;
         }
         if (request.action === 'getPageKey') {
