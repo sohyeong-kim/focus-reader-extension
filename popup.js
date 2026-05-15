@@ -54,7 +54,7 @@ async function previewVoice(voice) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'gpt-4o-mini-tts',
+                model: 'gpt-4o-mini-tts-2025-12-15',
                 input: `Hello there, I'm ${voiceName}.`,
                 voice: voice,
                 speed: 1.0
@@ -94,50 +94,62 @@ const cacheInfo = document.getElementById('cache-info');
 const clearPageBtn = document.getElementById('clear-page-cache');
 const clearAllBtn = document.getElementById('clear-all-cache');
 
-function updateCacheInfo() {
-    chrome.storage.local.get(null, (items) => {
-        const audioKeys = Object.keys(items).filter(k => k.startsWith('audio_'));
-        const totalSize = audioKeys.reduce((sum, k) => {
-            return sum + (items[k]?.length || 0);
-        }, 0);
-        const sizeMB = (totalSize / 1024 / 1024).toFixed(2);
-        cacheInfo.textContent = `${audioKeys.length} audio files (${sizeMB} MB)`;
+function getActiveTab() {
+    return new Promise(resolve => {
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs[0]));
     });
+}
+
+function sendToActiveTab(message) {
+    return new Promise(async (resolve) => {
+        const tab = await getActiveTab();
+        if (!tab) return resolve(null);
+        chrome.tabs.sendMessage(tab.id, message, (response) => {
+            if (chrome.runtime.lastError) {
+                // No content script on this tab (e.g. chrome://, new tab, file://)
+                resolve(null);
+            } else {
+                resolve(response);
+            }
+        });
+    });
+}
+
+function formatBytes(bytes) {
+    return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+async function updateCacheInfo() {
+    const stats = await sendToActiveTab({ action: 'getCacheStats' });
+    if (!stats) {
+        cacheInfo.innerHTML = '<span style="color:#888">Open an article page to see cache stats.</span>';
+        return;
+    }
+    cacheInfo.innerHTML =
+        `<div>This page: <b>${stats.pageCount}</b> files (${formatBytes(stats.pageBytes)})</div>` +
+        `<div style="margin-top:4px">This site total: <b>${stats.totalCount}</b> files (${formatBytes(stats.totalBytes)})</div>`;
 }
 
 updateCacheInfo();
 
-clearPageBtn.addEventListener('click', () => {
-    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        if (tabs[0]) {
-            const url = new URL(tabs[0].url);
-            const pageKey = url.hostname + url.pathname;
-            
-            chrome.storage.local.get(null, (items) => {
-                const keysToRemove = Object.keys(items).filter(k => 
-                    k.startsWith('audio_') && k.includes(pageKey)
-                );
-                chrome.storage.local.remove(keysToRemove, () => {
-                    updateCacheInfo();
-                    clearPageBtn.textContent = '✅ Cleared!';
-                    setTimeout(() => {
-                        clearPageBtn.textContent = '🗑️ This Page';
-                    }, 2000);
-                });
-            });
-        }
-    });
+clearPageBtn.addEventListener('click', async () => {
+    const response = await sendToActiveTab({ action: 'clearPageCache' });
+    if (response == null) {
+        clearPageBtn.textContent = '⚠️ Not available here';
+    } else {
+        clearPageBtn.textContent = `✅ Cleared ${response.cleared}!`;
+        updateCacheInfo();
+    }
+    setTimeout(() => { clearPageBtn.textContent = '🗑️ This Page'; }, 2000);
 });
 
-clearAllBtn.addEventListener('click', () => {
-    chrome.storage.local.get(null, (items) => {
-        const audioKeys = Object.keys(items).filter(k => k.startsWith('audio_'));
-        chrome.storage.local.remove(audioKeys, () => {
-            updateCacheInfo();
-            clearAllBtn.textContent = '✅ Cleared!';
-            setTimeout(() => {
-                clearAllBtn.textContent = '🗑️ Clear All';
-            }, 2000);
-        });
-    });
+clearAllBtn.addEventListener('click', async () => {
+    const response = await sendToActiveTab({ action: 'clearAllCache' });
+    if (response == null) {
+        clearAllBtn.textContent = '⚠️ Not available here';
+    } else {
+        clearAllBtn.textContent = `✅ Cleared ${response.cleared}!`;
+        updateCacheInfo();
+    }
+    setTimeout(() => { clearAllBtn.textContent = '🗑️ Clear All'; }, 2000);
 });

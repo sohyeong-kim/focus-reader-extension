@@ -1202,59 +1202,92 @@
         let cached = 0;
         let totalProcessed = 0;
         const totalSentences = getTotalSentenceCount();
-        
+
+        // Flatten every sentence into a single job list so the worker pool can
+        // pull from it. Cache hits are resolved up-front; only misses make it
+        // into the network queue.
+        const jobs = [];
         for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
             const para = paragraphs[pIdx];
-            
             for (let sIdx = 0; sIdx < para.sentences.length; sIdx++) {
-                if (!audioModeEnabled) break;
-                
                 const sentence = para.sentences[sIdx];
                 const cacheKey = hashText(sentence + '_' + ttsVoice);
-                
                 const cachedData = await dbGet(cacheKey);
                 if (cachedData && cachedData.audio) {
                     audioCache[cacheKey] = cachedData.audio;
                     cached++;
+                    totalProcessed++;
+                    progressEl.style.width = `${(totalProcessed / totalSentences) * 100}%`;
                 } else {
-                    textEl.textContent = t('generating', totalProcessed + 1, totalSentences);
-                    
-                    try {
-                        // OpenAI TTS
-                        const response = await fetch('https://api.openai.com/v1/audio/speech', {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${openaiApiKey}`,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                model: 'gpt-4o-mini-tts',
-                                input: sentence,
-                                voice: ttsVoice,
-                                speed: 1.0
-                            })
-                        });
+                    jobs.push({ sentence, cacheKey });
+                }
+            }
+        }
 
-                        if (!response.ok) throw new Error('API error');
+        const CONCURRENCY = 32;
+        const MAX_RETRIES = 5;
+        let nextIdx = 0;
 
-                        const blob = await response.blob();
-                        const arrayBuffer = await blob.arrayBuffer();
-                        const audioData = new Uint8Array(arrayBuffer);
-                        
-                        audioCache[cacheKey] = audioData;
-                        await dbPut(cacheKey, { audio: audioData, timestamp: Date.now() });
-                        generated++;
-                    } catch (e) {
-                        console.error('Audio generation failed:', e);
+        async function fetchOne(job) {
+            let attempt = 0;
+            while (true) {
+                let response;
+                try {
+                    response = await fetch('https://api.openai.com/v1/audio/speech', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${openaiApiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: 'gpt-4o-mini-tts-2025-12-15',
+                            input: job.sentence,
+                            voice: ttsVoice,
+                            speed: 1.0
+                        })
+                    });
+                } catch (netErr) {
+                    if (attempt < MAX_RETRIES) {
+                        await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+                        attempt++;
+                        continue;
+                    }
+                    throw netErr;
+                }
+                if (response.status === 429 || response.status === 503) {
+                    if (attempt < MAX_RETRIES) {
+                        const ra = parseFloat(response.headers.get('retry-after') || '0') * 1000;
+                        const backoff = ra > 0 ? ra : Math.min(8000, 500 * Math.pow(2, attempt));
+                        await new Promise(r => setTimeout(r, backoff));
+                        attempt++;
+                        continue;
                     }
                 }
-                
+                if (!response.ok) throw new Error('API error ' + response.status);
+                return new Uint8Array(await (await response.blob()).arrayBuffer());
+            }
+        }
+
+        async function worker() {
+            while (audioModeEnabled) {
+                const i = nextIdx++;
+                if (i >= jobs.length) return;
+                const job = jobs[i];
+                try {
+                    const audioData = await fetchOne(job);
+                    audioCache[job.cacheKey] = audioData;
+                    await dbPut(job.cacheKey, { audio: audioData, timestamp: Date.now() });
+                    generated++;
+                } catch (e) {
+                    console.error('Audio generation failed:', e);
+                }
                 totalProcessed++;
+                textEl.textContent = t('generating', totalProcessed, totalSentences);
                 progressEl.style.width = `${(totalProcessed / totalSentences) * 100}%`;
             }
-            
-            if (!audioModeEnabled) break;
         }
+
+        await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
         
         allPageAudioGenerated = true;
         isGeneratingAudio = false;
@@ -1271,16 +1304,58 @@
 
     async function playCurrentSentence() {
         if (!audioModeEnabled) return;
-        
+
         stopAudio();
-        
+
         const sentence = sentences[currentSentenceIndex];
         const cacheKey = hashText(sentence + '_' + ttsVoice);
-        const audioData = audioCache[cacheKey];
+        let audioData = audioCache[cacheKey];
 
+        // Fall back to IndexedDB — in-memory cache is wiped on page reload
         if (!audioData) {
-            console.log('Audio not found for:', sentence.substring(0, 30));
-            return;
+            const cachedData = await dbGet(cacheKey);
+            if (cachedData && cachedData.audio) {
+                audioData = cachedData.audio;
+                audioCache[cacheKey] = audioData;
+            }
+        }
+
+        // Cache miss → generate on-demand so playback never silently stops.
+        if (!audioData) {
+            if (!openaiApiKey) {
+                console.log('Audio not found and no OpenAI key for:', sentence.substring(0, 30));
+                return;
+            }
+            console.log('Cache miss; generating on-demand for:', sentence.substring(0, 30));
+            try {
+                const resp = await fetch('https://api.openai.com/v1/audio/speech', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${openaiApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini-tts-2025-12-15',
+                        input: sentence,
+                        voice: ttsVoice,
+                        speed: 1.0
+                    })
+                });
+                if (!resp.ok) {
+                    console.error('On-demand TTS failed:', resp.status);
+                    return;
+                }
+                audioData = new Uint8Array(await (await resp.blob()).arrayBuffer());
+                audioCache[cacheKey] = audioData;
+                try {
+                    await dbPut(cacheKey, { audio: audioData, timestamp: Date.now() });
+                } catch (dbErr) {
+                    console.warn('DB cache write failed (continuing):', dbErr);
+                }
+            } catch (genErr) {
+                console.error('On-demand TTS error:', genErr);
+                return;
+            }
         }
 
         try {
@@ -1359,29 +1434,40 @@
                 sendResponse({ cleared: count });
             });
             return true; // async response
+        } else if (request.action === 'clearAllCache') {
+            clearAllCache().then(count => {
+                sendResponse({ cleared: count });
+            });
+            return true;
+        } else if (request.action === 'getCacheStats') {
+            getCacheStats().then(stats => {
+                sendResponse(stats);
+            });
+            return true;
         }
     });
 
     async function clearPageCache() {
+        if (!dbCache) await initDB();
         if (!dbCache) return 0;
-        
+
         return new Promise((resolve) => {
             try {
                 const tx = dbCache.transaction('audioCache', 'readwrite');
                 const store = tx.objectStore('audioCache');
                 const request = store.getAll();
-                
+
                 request.onsuccess = () => {
                     const all = request.result || [];
                     let count = 0;
-                    
+
                     all.forEach(item => {
                         if (item.pageKey === PAGE_KEY) {
                             store.delete(item.id);
                             count++;
                         }
                     });
-                    
+
                     tx.oncomplete = () => {
                         audioCache = {};
                         allPageAudioGenerated = false;
@@ -1390,6 +1476,65 @@
                 };
             } catch (e) {
                 resolve(0);
+            }
+        });
+    }
+
+    async function clearAllCache() {
+        if (!dbCache) await initDB();
+        if (!dbCache) return 0;
+
+        return new Promise((resolve) => {
+            try {
+                const tx = dbCache.transaction('audioCache', 'readwrite');
+                const store = tx.objectStore('audioCache');
+                const countReq = store.count();
+                countReq.onsuccess = () => {
+                    const count = countReq.result || 0;
+                    store.clear();
+                    tx.oncomplete = () => {
+                        audioCache = {};
+                        allPageAudioGenerated = false;
+                        resolve(count);
+                    };
+                };
+            } catch (e) {
+                resolve(0);
+            }
+        });
+    }
+
+    async function getCacheStats() {
+        if (!dbCache) await initDB();
+        if (!dbCache) return { pageCount: 0, pageBytes: 0, totalCount: 0, totalBytes: 0 };
+
+        return new Promise((resolve) => {
+            try {
+                const tx = dbCache.transaction('audioCache', 'readonly');
+                const store = tx.objectStore('audioCache');
+                const request = store.getAll();
+
+                request.onsuccess = () => {
+                    const all = request.result || [];
+                    let pageCount = 0, pageBytes = 0, totalBytes = 0;
+                    all.forEach(item => {
+                        const size = item.audio?.byteLength || item.audio?.length || 0;
+                        totalBytes += size;
+                        if (item.pageKey === PAGE_KEY) {
+                            pageCount++;
+                            pageBytes += size;
+                        }
+                    });
+                    resolve({
+                        pageCount,
+                        pageBytes,
+                        totalCount: all.length,
+                        totalBytes,
+                    });
+                };
+                request.onerror = () => resolve({ pageCount: 0, pageBytes: 0, totalCount: 0, totalBytes: 0 });
+            } catch (e) {
+                resolve({ pageCount: 0, pageBytes: 0, totalCount: 0, totalBytes: 0 });
             }
         });
     }
