@@ -32,40 +32,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
-  
-  // Proxy requests to localhost (bypass CORS)
-  if (request.action === 'proxyFetch') {
-    (async () => {
-      try {
-        const fetchOptions = {
-          method: request.method || 'GET',
-          headers: request.headers || {}
-        };
-        
-        if (request.body) {
-          fetchOptions.body = JSON.stringify(request.body);
-        }
-        
-        const response = await fetch(request.url, fetchOptions);
-        
-        if (request.responseType === 'blob') {
-          const blob = await response.blob();
-          const arrayBuffer = await blob.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
-          sendResponse({ 
-            ok: response.ok, 
-            status: response.status,
-            data: Array.from(uint8Array),
-            isBlob: true
-          });
-        } else {
-          const data = await response.json();
-          sendResponse({ ok: response.ok, status: response.status, data });
-        }
-      } catch (e) {
-        sendResponse({ ok: false, error: e.message });
-      }
-    })();
-    return true;
-  }
 });
